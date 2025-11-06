@@ -1,0 +1,11 @@
+h1 {
+    text-shadow: 2px 2px 4px #cccccc;
+}
+
+.container {
+    border-left: 5px solid #0056b3;
+}
+
+p {
+    line-height: 1.6;
+}

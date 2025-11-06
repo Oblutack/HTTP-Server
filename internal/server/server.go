@@ -5,6 +5,7 @@ import (
 	"log"
 	"net"
 	"os"
+	"path/filepath"
 	"strings"
 )
 
@@ -102,31 +103,50 @@ func (s *Server) parseRequest(conn net.Conn) (*Request, error) {
 
 func (s *Server) buildResponse(request *Request) string {
 	var statusLine string
-	var body []byte
-	var err error
+	var filePath string
+	var contentType string
 
 	switch request.Path {
 	case "/":
+		filePath = "static/index.html"
 		statusLine = "HTTP/1.1 200 OK"
-		body, err = os.ReadFile("static/index.html")
 	case "/about":
+		filePath = "static/about.html"
 		statusLine = "HTTP/1.1 200 OK"
-		htmlBody := "<html><body><h1>About</h1><p>Still generated directly from our GO code</p></body></html>"
-		body = []byte(htmlBody)
+	case "/style.css":
+		filePath = "static/style.css"
+		statusLine = "HTTP/1.1 200 OK"
 	default:
+		filePath = "static/404.html"
 		statusLine = "HTTP/1.1 404 Not Found"
-		body, err = os.ReadFile("static/404.html")
 	}
 
+	ext := filepath.Ext(filePath)
+
+	switch ext {
+	case ".css":
+		contentType = "text/css"
+	case ".js":
+		contentType = "application/javascript"
+	case ".png":
+		contentType = "image/png"
+	case ".jpg", ".jpeg":
+		contentType = "image/jpeg"
+	default:
+		contentType = "text/html"
+	}
+
+	body, err := os.ReadFile(filePath)
 	if err != nil {
-		log.Printf("Error while reading the file: %v", err)
-		statusLine = "HTTP/1.1 500 Internal Server Error"
-		errorBody := "<html><body><h1>Server error.</h1></body></html>"
-		body = []byte(errorBody)
+		log.Printf("Error whilst reading the file %s: %v", filePath, err)
+		filePath = "static/404.html" 
+		statusLine = "HTTP/1.1 404 Not Found"
+		contentType = "text/html"
+		body, _ = os.ReadFile(filePath)
 	}
 
-	response := fmt.Sprintf("%s\r\nContent-Type: text/html\r\nContent-Length: %d\r\n\r\n%s",
-		statusLine, len(body), body)
+	response := fmt.Sprintf("%s\r\nContent-Type: %s\r\nContent-Length: %d\r\n\r\n%s", 
+		statusLine, contentType, len(body), body)
 
 	return response
 }
