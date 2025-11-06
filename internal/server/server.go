@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log"
 	"net"
+	"os"
 	"strings"
 )
 
@@ -27,81 +28,105 @@ func (s *Server) Start() error {
 	listener, err := net.Listen("tcp", s.listenAddr)
 
 	if err != nil{
-		return fmt.Errorf("Nije moguce pokrenuti listener: %w", err)
+		return fmt.Errorf("Unable to run the listener: %w", err)
 	}
 
 	defer listener.Close()
 
-	log.Printf("Server slusa na adresi %s", s.listenAddr)
+	log.Printf("Server is listening at address %s", s.listenAddr)
 
 	for{
 
 		conn, err := listener.Accept()
 
 		if err != nil {
-			log.Printf("Greska prilikom prihvatanja konekcije: v%", err)
+			log.Printf("Error while fetching the connection: v%", err)
 			continue
 		}
 
-		s.handleConnection(conn)
+		//Added concurrency
+		go s.handleConnection(conn)
 	}
 }
 
-func (s *Server) handleConnection (conn net.Conn){
-
+func (s *Server) handleConnection(conn net.Conn) {
 	defer conn.Close()
-	log.Printf("Primljena nova konekcije od %s", conn.RemoteAddr())
+	log.Printf("Fetched new connection from %s", conn.RemoteAddr())
 
+	request, err := s.parseRequest(conn)
+	if err != nil {
+		log.Printf("Unable to parse the request: %v", err)
+		return
+	}
+
+	log.Printf("Method: %s, Path: %s, Version: %s", request.Method, request.Path, request.Version)
+
+	response := s.buildResponse(request)
+
+	_, err = conn.Write([]byte(response))
+	if err != nil {
+		log.Printf("Error while sending the response: %v", err)
+	}
+
+	log.Println("Response sucessfully sent.")
+}
+
+
+func (s *Server) parseRequest(conn net.Conn) (*Request, error) {
 	buffer := make([]byte, 1024)
 	n, err := conn.Read(buffer)
-
 	if err != nil {
-		log.Printf("Greska prilikom citanja sa konekcije. v%", err)
-		return
+		return nil, fmt.Errorf("error while reading from the connection: %w", err)
 	}
 
 	rawRequest := string(buffer[:n])
-
 	lines := strings.Split(rawRequest, "\r\n")
-
 	if len(lines) == 0 {
-		log.Println("Primljen prazan zahtjev.")
-		return
+		return nil, fmt.Errorf("fetched empty request")
 	}
 
 	requestLine := lines[0]
-
 	parts := strings.Split(requestLine, " ")
 	if len(parts) != 3 {
-		log.Printf("Primljena neispravna request line: %s", requestLine)
-		return
+		return nil, fmt.Errorf("fetched incorrect request line: %s", requestLine)
 	}
 
-	request := Request {
-		Method: parts[0],
-		Path: parts[1],
+	request := &Request{
+		Method:  parts[0],
+		Path:    parts[1],
 		Version: parts[2],
 	}
 
-	log.Printf("Metoda: %s, Putanja: %s, Verzija: %s", request.Method, request.Path, request.Version)
+	return request, nil
+}
 
-	
-	var response string
+func (s *Server) buildResponse(request *Request) string {
+	var statusLine string
+	var body []byte
+	var err error
 
 	switch request.Path {
 	case "/":
-		response = "HTTP/1.1 200 OK\r\n\r\nDobrodošli na početnu stranicu!"
+		statusLine = "HTTP/1.1 200 OK"
+		body, err = os.ReadFile("static/index.html")
 	case "/about":
-		response = "HTTP/1.1 200 OK\r\n\r\nOvo je naš sjajan Go web server."
+		statusLine = "HTTP/1.1 200 OK"
+		htmlBody := "<html><body><h1>About</h1><p>Still generated directly from our GO code</p></body></html>"
+		body = []byte(htmlBody)
 	default:
-		response = "HTTP/1.1 404 Not Found\r\n\r\nStranica nije pronađena."
+		statusLine = "HTTP/1.1 404 Not Found"
+		body, err = os.ReadFile("static/404.html")
 	}
-
-	_, err = conn.Write([]byte(response))
 
 	if err != nil {
-		log.Printf("Greska prilikom slanja odgovora: v%", err)
+		log.Printf("Error while reading the file: %v", err)
+		statusLine = "HTTP/1.1 500 Internal Server Error"
+		errorBody := "<html><body><h1>Server error.</h1></body></html>"
+		body = []byte(errorBody)
 	}
 
-	log.Println("Odgovor uspjesno poslat.")
+	response := fmt.Sprintf("%s\r\nContent-Type: text/html\r\nContent-Length: %d\r\n\r\n%s",
+		statusLine, len(body), body)
+
+	return response
 }
