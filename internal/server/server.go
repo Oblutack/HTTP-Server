@@ -17,6 +17,8 @@ type Request struct {
 	Method string
 	Path string
 	Version string
+	Headers map[string]string 
+    Body    string
 }
 
 func NewServer (addr string) *Server{
@@ -74,79 +76,118 @@ func (s *Server) handleConnection(conn net.Conn) {
 
 
 func (s *Server) parseRequest(conn net.Conn) (*Request, error) {
-	buffer := make([]byte, 1024)
+	buffer := make([]byte, 2048)
 	n, err := conn.Read(buffer)
 	if err != nil {
 		return nil, fmt.Errorf("error while reading from the connection: %w", err)
 	}
 
 	rawRequest := string(buffer[:n])
-	lines := strings.Split(rawRequest, "\r\n")
-	if len(lines) == 0 {
+
+	parts := strings.SplitN(rawRequest, "\r\n\r\n", 2)
+	headerBlock := parts[0]
+
+	var body string
+	if len(parts) >1 {
+		body = parts[1]
+	}
+
+	headerLines := strings.Split(headerBlock, "\r\n")
+	if len(headerLines) == 0{
 		return nil, fmt.Errorf("fetched empty request")
 	}
 
-	requestLine := lines[0]
-	parts := strings.Split(requestLine, " ")
-	if len(parts) != 3 {
+	requestLine := headerLines[0]
+
+	requestLineParts := strings.Split(requestLine, " ")
+	if len(requestLineParts) != 3{
 		return nil, fmt.Errorf("fetched incorrect request line: %s", requestLine)
 	}
 
+	headers := make(map[string]string)
+
+	for _, line := range headerLines[1:]{
+		if line == ""{
+			continue
+		}
+		headerParts := strings.SplitN(line, ": ", 2)
+		if len (headerParts) == 2{
+			headers[headerParts[0]] = headerParts[1]
+		}
+	}
+
+
 	request := &Request{
-		Method:  parts[0],
-		Path:    parts[1],
-		Version: parts[2],
+		Method: requestLineParts[0],
+		Path: requestLineParts[1],
+		Version: requestLineParts[2],
+		Headers: headers,
+		Body: body,
 	}
 
 	return request, nil
 }
 
+
 func (s *Server) buildResponse(request *Request) string {
 	var statusLine string
-	var filePath string
-	var contentType string
+	var body []byte
+	contentType := "text/html" 
 
-	switch request.Path {
-	case "/":
+	if request.Path == "/contact" && request.Method == "POST" {
+		log.Printf("Fetched the form data: %s", request.Body)
+		statusLine = "HTTP/1.1 200 OK"
+		htmlBody := `
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Thanks!</title>
+    <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+    <div class="container">
+        <h1>Thanks!</h1>
+        <p>Your message is successfully fetched</p>
+        <a href="/">Back to the home page</a>
+    </div>
+</body>
+</html>`
+		body = []byte(htmlBody)
+
+		return fmt.Sprintf("%s\r\nContent-Type: %s\r\nContent-Length: %d\r\n\r\n%s",
+			statusLine, contentType, len(body), body)
+	}
+
+
+	var filePath string
+	if request.Path == "/" {
 		filePath = "static/index.html"
-		statusLine = "HTTP/1.1 200 OK"
-	case "/about":
-		filePath = "static/about.html"
-		statusLine = "HTTP/1.1 200 OK"
-	case "/style.css":
-		filePath = "static/style.css"
-		statusLine = "HTTP/1.1 200 OK"
-	default:
-		filePath = "static/404.html"
-		statusLine = "HTTP/1.1 404 Not Found"
+	} else {
+		filePath = "static" + request.Path 
 	}
 
 	ext := filepath.Ext(filePath)
-
 	switch ext {
 	case ".css":
 		contentType = "text/css"
 	case ".js":
 		contentType = "application/javascript"
-	case ".png":
-		contentType = "image/png"
-	case ".jpg", ".jpeg":
-		contentType = "image/jpeg"
 	default:
 		contentType = "text/html"
 	}
-
-	body, err := os.ReadFile(filePath)
+	
+	fileBody, err := os.ReadFile(filePath)
 	if err != nil {
-		log.Printf("Error whilst reading the file %s: %v", filePath, err)
-		filePath = "static/404.html" 
+		log.Printf("File not found: %s. Serving the 404 page", filePath)
 		statusLine = "HTTP/1.1 404 Not Found"
 		contentType = "text/html"
-		body, _ = os.ReadFile(filePath)
+		body, _ = os.ReadFile("static/404.html") 
+	} else {
+		statusLine = "HTTP/1.1 200 OK"
+		body = fileBody
 	}
 
-	response := fmt.Sprintf("%s\r\nContent-Type: %s\r\nContent-Length: %d\r\n\r\n%s", 
+	return fmt.Sprintf("%s\r\nContent-Type: %s\r\nContent-Length: %d\r\n\r\n%s",
 		statusLine, contentType, len(body), body)
-
-	return response
 }
