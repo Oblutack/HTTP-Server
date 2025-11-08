@@ -16,6 +16,7 @@ This project implements a fully concurrent, static file web server. It is built 
 - **HTTP/1.1 Request Parsing:** Manually parses the request line to extract the HTTP method, path, and version.
 - **Static File Serving:** Reads and serves HTML files from a `/static` directory on the local filesystem.
 - **Basic Routing:** Implements a simple router to serve different content based on the requested path (`/`, `/about`, etc.) and returns a custom 404 page for unknown routes.
+- **JSON API Endpoint:** Includes a simple API at `/api/time` that returns the current server time in JSON format.
 - **Clean Code Structure:** The project is organized following Go's best practices, with a clear separation between the application's entry point (`/cmd`) and its core logic (`/internal`).
 
 ## Core Concepts Explored
@@ -25,6 +26,7 @@ This project was a practical exercise in understanding:
 - **HTTP Protocol:** The structure of requests and responses, including status lines, headers (`Content-Type`, `Content-Length`), and the importance of CRLF (`\r\n`).
 - **Concurrency in Go:** The practical application of goroutines to solve the challenge of handling multiple clients without blocking.
 - **I/O Operations:** Reading from network connections and local files using buffers (`[]byte`).
+- **API Development:** Understanding how to serve dynamic data as JSON and setting the correct `application/json` content type.
 - **Code Refactoring:** The importance of breaking down complex functions into smaller, single-responsibility components for better readability and maintenance.
 
 ## Getting Started
@@ -54,4 +56,7 @@ This project was a practical exercise in understanding:
 
     # Access the about page
     curl http://localhost:8080/about
+
+    # Access the time API
+    curl http://localhost:8080/api/time
     ```
