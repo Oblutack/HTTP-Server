@@ -1,12 +1,14 @@
 package server
 
 import (
+	"encoding/json"
 	"fmt"
 	"log"
 	"net"
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 )
 
 type Server struct {
@@ -19,6 +21,10 @@ type Request struct {
 	Version string
 	Headers map[string]string 
     Body    string
+}
+
+type TimeResponse struct {
+    CurrentTime string `json:"currentTime"`
 }
 
 func NewServer (addr string) *Server{
@@ -134,6 +140,28 @@ func (s *Server) buildResponse(request *Request) string {
 	var body []byte
 	contentType := "text/html" 
 
+	if request.Path == "/api/time" && request.Method == "GET" {
+		statusLine = "HTTP/1.1 200 OK"
+		contentType = "application/json" 
+
+		data := TimeResponse{
+			CurrentTime: time.Now().Format(time.RFC3339),
+		}
+
+		jsonBody, err := json.Marshal(data)
+		if err != nil {
+			log.Printf("Error whilst running the JSON: %v", err)
+			statusLine = "HTTP/1.1 500 Internal Server Error"
+			body = []byte(`{"error": "Internal Server Error"}`)
+		} else {
+			body = jsonBody
+		}
+
+		return fmt.Sprintf("%s\r\nContent-Type: %s\r\nContent-Length: %d\r\n\r\n%s",
+			statusLine, contentType, len(body), body)
+	}
+
+
 	if request.Path == "/contact" && request.Method == "POST" {
 		log.Printf("Fetched the form data: %s", request.Body)
 		statusLine = "HTTP/1.1 200 OK"
@@ -148,25 +176,22 @@ func (s *Server) buildResponse(request *Request) string {
 <body>
     <div class="container">
         <h1>Thanks!</h1>
-        <p>Your message is successfully fetched</p>
+        <p>Your message has been successfully delivered.</p>
         <a href="/">Back to the home page</a>
     </div>
 </body>
 </html>`
 		body = []byte(htmlBody)
-
 		return fmt.Sprintf("%s\r\nContent-Type: %s\r\nContent-Length: %d\r\n\r\n%s",
 			statusLine, contentType, len(body), body)
 	}
-
 
 	var filePath string
 	if request.Path == "/" {
 		filePath = "static/index.html"
 	} else {
-		filePath = "static" + request.Path 
+		filePath = "static" + request.Path
 	}
-
 	ext := filepath.Ext(filePath)
 	switch ext {
 	case ".css":
@@ -176,13 +201,12 @@ func (s *Server) buildResponse(request *Request) string {
 	default:
 		contentType = "text/html"
 	}
-	
 	fileBody, err := os.ReadFile(filePath)
 	if err != nil {
 		log.Printf("File not found: %s. Serving the 404 page", filePath)
 		statusLine = "HTTP/1.1 404 Not Found"
 		contentType = "text/html"
-		body, _ = os.ReadFile("static/404.html") 
+		body, _ = os.ReadFile("static/404.html")
 	} else {
 		statusLine = "HTTP/1.1 200 OK"
 		body = fileBody
